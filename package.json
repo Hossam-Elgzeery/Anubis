@@ -1,0 +1,44 @@
+{
+  "name": "anubis",
+  "version": "0.1.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "anubis": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "rules",
+    "assets",
+    "prompts"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run"
+  },
+  "keywords": [],
+  "author": "Hossam Abdel-Aziz",
+  "license": "MIT",
+  "dependencies": {
+    "@eslint/js": "^10.0.1",
+    "commander": "^15.0.0",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "node-llama-cpp": "^3.22.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "vite": "^7.3.7",
+    "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "simple-git": "4.0.2"
+  }
+}
