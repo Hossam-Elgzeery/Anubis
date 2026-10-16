@@ -149,11 +149,19 @@ program
       console.log("\n📄 Preparing AI review context...");
 
       const chunks = await getReviewChunks(files, cwd);
-      console.log(`✔ Prepared ${chunks.length} review chunks`);
+      const changedRangeCount = chunks.reduce(
+        (total, chunk) => total + chunk.ownedRanges.length,
+        0,
+      );
+      const chunkFileCount = new Set(chunks.map((chunk) => chunk.file)).size;
+      console.log(
+        `✔ Prepared ${chunks.length} review ${chunks.length === 1 ? "chunk" : "chunks"} from ${changedRangeCount} changed ${changedRangeCount === 1 ? "range" : "ranges"} across ${chunkFileCount} ${chunkFileCount === 1 ? "file" : "files"}`,
+      );
       if (process.env.ANUBIS_DEBUG === "1") {
         for (const [index, chunk] of chunks.entries()) {
-          console.log(`\n📄 Review Context ${index + 1}/${chunks.length}:`);
+          console.log(`\n----- BEGIN REVIEW CONTEXT: chunk ${index + 1}/${chunks.length} -----`);
           console.log(chunk.context);
+          console.log(`----- END REVIEW CONTEXT: chunk ${index + 1}/${chunks.length} -----`);
         }
       }
 
@@ -176,7 +184,13 @@ program
         if (chunkResult.failures.length > 0) {
           aiError = `${chunkResult.failures.length}/${chunks.length} AI chunks failed:\n` +
             chunkResult.failures.map((failure) =>
-              `${failure.file}:${failure.startLine}-${failure.endLine}: ${failure.reason}`,
+              `${failure.file} [${failure.isUntracked
+                ? `${failure.ranges.map((range) => range.startLine === range.endLine
+                  ? String(range.startLine)
+                  : `${range.startLine}-${range.endLine}`).join(", ")} (untracked file)`
+                : failure.ranges.map((range) => range.startLine === range.endLine
+                  ? String(range.startLine)
+                  : `${range.startLine}-${range.endLine}`).join(", ")}]: ${failure.reason}`,
             ).join("\n");
           process.exitCode = 1;
           console.warn(`⚠️ AI review partially completed: ${chunkResult.failures.length} failed chunks`);

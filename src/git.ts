@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 const supportedExtensions = /\.(js|jsx|ts|tsx)$/i;
 const TARGET_CHUNK_CHARS = 3000;
 const OVERLAP_LINES = 18;
-const MAX_DIFF_CHARS_PER_CHUNK = 1200;
+const DIFF_CONTEXT_LINES = 3;
 const MAX_DEPENDENCY_CHARS = 1200;
 
 export interface ReviewChunk {
@@ -18,12 +18,20 @@ export interface ReviewChunk {
   /** Only findings in this inclusive range are owned by this chunk. */
   ownedStartLine: number;
   ownedEndLine: number;
+  /** Exact changed ranges; unlike the bounding fields, gaps are not review-owned. */
+  ownedRanges: Array<{ startLine: number; endLine: number }>;
+  isUntracked: boolean;
   context: string;
 }
 
 interface Range {
   start: number;
   end: number;
+}
+
+interface DiffHunk {
+  changedRanges: Range[];
+  text: string;
 }
 
 function isSafeFile(file: string, cwd: string): boolean {
@@ -71,23 +79,74 @@ export async function getGitDiff(cwd = process.cwd()): Promise<string> {
 }
 
 async function getFileDiff(file: string, cwd: string): Promise<string> {
-  const [unstaged, staged] = await Promise.all([
-    runGit(["diff", "--no-ext-diff", "--no-textconv", "--", file], cwd),
-    runGit(
-      ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--", file],
+  // Comparing HEAD directly with the working tree produces line numbers for the
+  // final source even when a file contains both staged and unstaged edits.
+  try {
+    return await runGit(
+      ["diff", "HEAD", `--unified=${DIFF_CONTEXT_LINES}`, "--no-ext-diff", "--no-textconv", "--", file],
       cwd,
-    ),
-  ]);
-  const combined = [unstaged, staged].filter(Boolean).join("\n");
-  if (!combined)
-    return "(Untracked or no patch available; source lines are authoritative.)";
-  if (combined.length <= MAX_DIFF_CHARS_PER_CHUNK) return combined;
-  let output = "";
-  for (const line of combined.split("\n")) {
-    if (output.length + line.length + 1 > MAX_DIFF_CHARS_PER_CHUNK) break;
-    output += `${line}\n`;
+    );
+  } catch (error) {
+    // A newly initialized repository has no HEAD yet. Its index diff still
+    // represents staged files; a truly untracked file has no patch.
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("bad revision 'HEAD'")) throw error;
+    return runGit(
+      ["diff", "--cached", `--unified=${DIFF_CONTEXT_LINES}`, "--no-ext-diff", "--no-textconv", "--", file],
+      cwd,
+    );
   }
-  return `${output}[DIFF EXCERPT OMITTED; review the source lines below]`;
+}
+
+function parseDiffHunks(diff: string, lineCount: number): DiffHunk[] {
+  const lines = diff.split("\n");
+  const header: string[] = [];
+  const hunks: DiffHunk[] = [];
+  let index = 0;
+
+  while (index < lines.length && !lines[index].startsWith("@@")) {
+    header.push(lines[index]);
+    index++;
+  }
+
+  while (index < lines.length) {
+    if (!lines[index].startsWith("@@")) {
+      index++;
+      continue;
+    }
+    const match = /@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(lines[index]);
+    const hunkLines = [lines[index++]];
+    while (index < lines.length && !lines[index].startsWith("@@")) {
+      hunkLines.push(lines[index++]);
+    }
+    if (!match) continue;
+
+    let newLine = Math.max(0, Number(match[1]) - 1);
+    const changedRanges: Range[] = [];
+    const addChangedLine = (line: number): void => {
+      const start = Math.min(line, Math.max(0, lineCount - 1));
+      const end = Math.min(lineCount, start + 1);
+      const previous = changedRanges.at(-1);
+      if (previous && start <= previous.end) previous.end = Math.max(previous.end, end);
+      else changedRanges.push({ start, end });
+    };
+    for (const line of hunkLines.slice(1)) {
+      if (line.startsWith("+")) {
+        addChangedLine(newLine);
+        newLine++;
+      } else if (line.startsWith("-")) {
+        // Anchor a removed line to the statement now occupying its position.
+        addChangedLine(newLine);
+      } else if (!line.startsWith("\\ No newline")) {
+        newLine++;
+      }
+    }
+    hunks.push({
+      changedRanges,
+      text: [...header.filter(Boolean), ...hunkLines].join("\n"),
+    });
+  }
+  return hunks;
 }
 
 function scriptKind(file: string): ts.ScriptKind {
@@ -101,7 +160,7 @@ function lineOf(source: ts.SourceFile, pos: number): number {
   return source.getLineAndCharacterOfPosition(pos).line;
 }
 
-/** Prefer complete statements. Descend into a large function/component only when needed. */
+/** Prefer complete statements and recursively expose boundaries inside large bodies. */
 function syntaxRanges(source: ts.SourceFile, lines: string[]): Range[] {
   const boundaries = new Set<number>([0, lines.length]);
   const endLine = (node: ts.Node): number => {
@@ -115,33 +174,29 @@ function syntaxRanges(source: ts.SourceFile, lines: string[]): Range[] {
       if (end <= start) continue;
       boundaries.add(start);
       boundaries.add(end);
-      if (charCount(lines, start, end) > TARGET_CHUNK_CHARS) {
-        // A large component should be divided at its top-level body statements,
-        // not at arbitrary nested expressions, JSX nodes, or callback internals.
-        const body = ts.isFunctionDeclaration(statement)
-          ? statement.body
-          : ts.isClassDeclaration(statement)
-            ? undefined
-            : ts.isVariableStatement(statement)
-              ? (() => {
-                  const decl = statement.declarationList.declarations[0];
-                  const init = decl?.initializer;
-                  return init &&
-                    (ts.isArrowFunction(init) ||
-                      ts.isFunctionExpression(init)) &&
-                    ts.isBlock(init.body)
-                    ? init.body
-                    : undefined;
-                })()
-              : undefined;
-        if (body && ts.isBlock(body)) {
-          for (const child of body.statements) {
-            boundaries.add(lineOf(source, child.getStart(source)));
-            boundaries.add(endLine(child));
-          }
-        }
-      }
+      if (charCount(lines, start, end) > TARGET_CHUNK_CHARS)
+        collectNestedBoundaries(statement);
     }
+  };
+  const collectNestedBoundaries = (node: ts.Node): void => {
+    if (ts.isBlock(node) || ts.isSourceFile(node)) {
+      for (const child of node.statements) {
+        boundaries.add(lineOf(source, child.getStart(source)));
+        boundaries.add(endLine(child));
+        if (charCount(lines, lineOf(source, child.getStart(source)), endLine(child)) > TARGET_CHUNK_CHARS)
+          collectNestedBoundaries(child);
+      }
+      return;
+    }
+    if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
+      for (const member of node.members) {
+        boundaries.add(lineOf(source, member.getStart(source)));
+        boundaries.add(endLine(member));
+        collectNestedBoundaries(member);
+      }
+      return;
+    }
+    ts.forEachChild(node, collectNestedBoundaries);
   };
   addStatements(source.statements);
   const points = [...boundaries]
@@ -238,6 +293,7 @@ function dependencyContext(
   lines: string[],
   owned: Range,
   visibleStart: number,
+  visibleEnd: number,
 ): string {
   const identifiers = new Set<string>();
   const startPos = source.getPositionOfLineAndCharacter(owned.start, 0);
@@ -255,7 +311,9 @@ function dependencyContext(
   const candidates = collectDeclarations(source)
     .filter(
       (d) =>
-        identifiers.has(d.name) && d.end <= visibleStart && d.end > d.start,
+        identifiers.has(d.name) &&
+        (d.end <= visibleStart || d.start >= visibleEnd) &&
+        d.end > d.start,
     )
     .sort((a, b) => a.priority - b.priority || a.start - b.start);
   const snippets: string[] = [];
@@ -299,33 +357,65 @@ export async function getReviewChunks(
       true,
       scriptKind(file),
     );
-    const ranges = planRanges(lines, syntaxRanges(source, lines));
-    for (const owned of ranges) {
-      const start = Math.max(0, owned.start - OVERLAP_LINES);
+    const hunks = parseDiffHunks(diff, lines.length);
+    const isUntracked = hunks.length === 0;
+    const changedRanges = hunks.length > 0
+      ? hunks.flatMap((hunk) => hunk.changedRanges)
+      : [{ start: 0, end: lines.length }];
+    const syntax = syntaxRanges(source, lines);
+    const ranges = planRanges(lines, syntax).filter((range) =>
+      changedRanges.some((changed) => changed.start < range.end && changed.end > range.start),
+    );
+    for (const range of ranges) {
+      const ownedChanges = changedRanges.filter(
+        (changed) => changed.start < range.end && changed.end > range.start,
+      );
+      const owned: Range = {
+        start: Math.min(...ownedChanges.map((change) => Math.max(change.start, range.start))),
+        end: Math.max(...ownedChanges.map((change) => Math.min(change.end, range.end))),
+      };
+      const exactOwnedRanges = ownedChanges.map((change) => ({
+        startLine: Math.max(change.start, range.start) + 1,
+        endLine: Math.min(change.end, range.end),
+      }));
+      const desiredStart = Math.max(0, owned.start - OVERLAP_LINES);
+      const desiredEnd = Math.min(lines.length, range.end + OVERLAP_LINES);
+      const start = syntax.find(
+        (item) => item.start <= desiredStart && item.end > desiredStart,
+      )?.start ?? desiredStart;
+      const end = syntax.find((item) => item.end >= desiredEnd)?.end ?? desiredEnd;
       const numbered = lines
-        .slice(start, owned.end)
+        .slice(start, end)
         .map((line, i) => `[L${start + i + 1}] ${line}`)
+        .join("\n");
+      const relevantDiff = hunks
+        .filter((hunk) => hunk.changedRanges.some(
+          (change) => change.start < range.end && change.end > range.start,
+        ))
+        .map((hunk) => hunk.text)
         .join("\n");
       const context = [
         "=== GIT DIFF ===",
-        diff,
+        relevantDiff || "(Untracked file; source lines are authoritative.)",
         "",
         "=== CHANGED FILE CONTENT ===",
         `--- FILE: ${file} ---`,
-        `[REVIEW SCOPE: ${file}, lines ${owned.start + 1}-${owned.end}]`,
-        `[CONTEXT LINES: ${start + 1}-${owned.end}; overlap is for context only]`,
+        `[REVIEW SCOPE: ${file}, changed lines ${exactOwnedRanges.map((item) => `${item.startLine}-${item.endLine}`).join(", ")}]`,
+        `[CONTEXT LINES: ${start + 1}-${end}; surrounding lines are context only]`,
         "[Report findings only for REVIEW SCOPE lines. Use original file line numbers.]",
         numbered,
-        dependencyContext(source, lines, owned, start),
+        dependencyContext(source, lines, owned, start, end),
       ]
         .filter(Boolean)
         .join("\n");
       chunks.push({
         file,
         startLine: start + 1,
-        endLine: owned.end,
+        endLine: end,
         ownedStartLine: owned.start + 1,
         ownedEndLine: owned.end,
+        ownedRanges: exactOwnedRanges,
+        isUntracked,
         context,
       });
     }

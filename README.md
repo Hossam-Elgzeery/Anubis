@@ -30,15 +30,16 @@ Linters are essential, but they don't catch every lifecycle issue, asynchronous 
 ## ✨ Features
 
 - **🔒 Private by design:** Code review runs on your computer. No hosted AI API, API key, or account is required for the recommended model.
-- **🌍 Cross-platform by design:** Built to run locally on macOS, Windows, and Linux. Compatibility and performance may vary depending on your hardware and system configuration..
+- **🌍 Cross-platform by design:** Built to run locally on macOS, Windows, and Linux. Compatibility and performance may vary depending on your hardware and system configuration.
 - **⬇️ Automatic model setup:** Download the recommended model directly during initialization, with progress tracking and integrity verification.
 - **♻️ Download once, reuse everywhere:** Share one locally cached model across multiple projects instead of downloading it for each repository.
 - **⚛️ React Native-focused:** Review Hooks, cleanup, navigation, async flows, security, accessibility, and meaningful performance concerns.
+- **🎯 Direct behavior-focused rules:** Use one focused React Native rule set that explicitly checks async completion ownership, repeated actions, concurrent state changes, failure boundaries, hooks, and lifecycle behavior.
 - **🌿 Git-aware:** Detect staged, unstaged, and untracked JavaScript and TypeScript changes.
-- **🔍 ESLint + AI:** Use your project's ESLint configuration where possible, or bundled fallback rules. The AI is instructed to avoid duplicating ESLint findings and focus on deeper runtime issues, but this is best-effort and depends on the model.
+- **🔍 ESLint + AI:** Use your project's ESLint configuration when one is detected; otherwise, use Anubis's bundled rules. The AI is instructed to avoid duplicating ESLint findings and focus on deeper runtime issues, but this is best-effort and depends on the model.
 - **🧠 Configurable thinking strategy:** Choose auto, bounded, unbounded, or zero thinking budget during setup to control model generation behavior.
-- **🧩 Chunked code review:** Review larger changed files in sequential chunks, with original line numbers and overlapping context instead of relying on a single truncated source excerpt.
-- **🧩 Resilient structured output:** Request schema-constrained JSON first; if that attempt fails, retry without the constraint and normalize supported response variations.
+- **🧩 Diff-focused, syntax-aware AI review:** Limit AI findings to changed Git lines, group those changes into syntax-aware chunks, and provide surrounding code plus relevant declarations as read-only context. ESLint still analyzes each detected changed file as a whole.
+- **🧩 Model-aware structured output:** Use schema-constrained JSON where compatible and skip grammar for Qwen3 thinking output, where constrained JSON may be emitted only in the thought segment.
 - **📊 Actionable reports:** Get severity, file and line, issue, impact, and suggested fix in a branded Markdown report.
 - **🛠️ Simple CLI:** Initialize once and run reviews with `anubis check`.
 - **♾️ No usage quotas or subscriptions:** Run as many local reviews as your hardware can handle. No credits to buy, no rate-limit countdowns, and no “come back later” messages. Your GPU might ask for a coffee break, though. ☕
@@ -47,7 +48,7 @@ Linters are essential, but they don't catch every lifecycle issue, asynchronous 
 
 ### Prerequisites
 
-- **Node.js:** A supported Node.js version compatible with the installed Anubis package.
+- **Node.js:** Node.js 22.13+ or 24+ is recommended for the current dependencies. (Node.js 20.19+ may also be supported; verify your environment.)
 - **Git:** Run Anubis inside a Git repository.
 - **A React Native project:** Current change detection supports `.js`, `.jsx`, `.ts`, and `.tsx`.
 - **Available memory and disk space:** The recommended model is a multi-gigabyte download and needs additional memory to run. Performance depends on your hardware.
@@ -55,19 +56,17 @@ Linters are essential, but they don't catch every lifecycle issue, asynchronous 
 
 ### 1. Install Anubis
 
-**After the package is published to npm:**
+**Install globally with npm:**
 
 ```bash
-npm install --global <published-package-name>
+npm install --global anubis
 ```
-
-> Replace `<published-package-name>` with the actual npm package name when published. Until then, use the local development instructions below.
 
 **For local development:**
 
 ```bash
-git clone <repository-url>
-cd <repository-directory>
+git clone <your-anubis-repository-url>
+cd <your-anubis-repository-directory>
 npm install
 npm run build
 npm link
@@ -117,7 +116,7 @@ If you select **Bounded** thinking (option `2`), Anubis also prompts for `Thinki
 
 Anubis supports model-specific generation strategies, but the exact behavior depends on the GGUF model and its chat template.
 
-Press **Enter** to accept the other defaults. Anubis downloads the recommended model from [Hugging Face](https://huggingface.co/lmstudio-community/Qwen3.5-4B-GGUF), verifies its integrity, and saves it in a shared local cache at `~/.anubis/models/`.
+Press **Enter** to accept the other defaults. Anubis can download the recommended model from [Hugging Face](https://huggingface.co/lmstudio-community/Qwen3.5-4B-GGUF), verifies its integrity, and saves it in a shared local cache at `~/.anubis/models/`.
 
 If the model has already been downloaded and passes verification, Anubis reuses it. Initialization creates `anubis.config.json` in the current project and does not overwrite an existing configuration.
 
@@ -147,11 +146,11 @@ However, **this recommendation is based on our own testing, not an exhaustive co
 | **Gemma-1.1-2B-IT** | Less consistent review quality and suggested fixes in our tests. | Not the default |
 | **DeepSeek-Coder-1.3B-Kexer** | Kotlin-focused fine-tuned model; less reliable findings and suggested fixes in our React Native tests. | Not the default |
 
-**Quick start:** Choose the recommended model during `anubis init`, and Anubis will automatically download, verify, and configure it for you.
+**Quick start:** Choose the recommended model during `anubis init` to use the built-in downloader.
 
 **Prefer to experiment?** You're free to use another compatible GGUF model. Different models and quantizations may produce different results, so we encourage you to experiment and find what works best for your projects and hardware.
 
-**Recommended download:** [Qwen3.5-4B Q6_K on Hugging Face](https://huggingface.co/lmstudio-community/Qwen3.5-4B-GGUF). Anubis handles the download automatically during setup.
+**Recommended download:** [Qwen3.5-4B Q6_K on Hugging Face](https://huggingface.co/lmstudio-community/Qwen3.5-4B-GGUF). Anubis includes an automatic downloader.
 
 > [!NOTE]
 > **These were exploratory, hands-on tests, not a controlled benchmark.** We intentionally experimented with models of different parameter sizes, quantizations, and training specializations to find a practical default for Anubis, rather than conduct a like-for-like comparison.
@@ -161,6 +160,8 @@ However, **this recommendation is based on our own testing, not an exhaustive co
 > In particular, DeepSeek-Coder-1.3B-Kexer was fine-tuned for Kotlin code generation rather than React Native code review. Its results should be interpreted in that context.
 >
 > Our recommendation reflects the results observed during development, not a claim that Qwen3.5-4B Q6_K is inherently superior to other models. Different models, configurations, and hardware may produce better results, and AI findings can still be inaccurate or incomplete.
+
+**Review quality note:** Passing JSON parsing, schema validation, and changed-line checks does **not** establish that a finding is correct. Anubis validates the output structure and review scope, not the semantic truth of every claim.
 
 **Model attribution:** The recommended [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B) model is developed by the Qwen team and licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). Anubis is an independent project licensed separately under the MIT License.
 
@@ -181,11 +182,25 @@ Smaller quantizations may require less memory and work better on devices with li
 
 ### Debugging
 
+**macOS/Linux:**
+
 ```bash
 ANUBIS_DEBUG=1 anubis check
 ```
 
-Debug mode prints the prepared review context and raw AI responses, including the structured-output attempt and fallback when applicable.
+**Windows PowerShell:**
+
+```powershell
+$env:ANUBIS_DEBUG="1"; anubis check
+```
+
+**Windows Command Prompt:**
+
+```bat
+set ANUBIS_DEBUG=1 && anubis check
+```
+
+Normal output shows each chunk's exact changed ranges separately from its wider context range and the number of accepted findings. Untracked files are labeled as full-file review scopes. Debug mode additionally prints clearly delimited review contexts, the raw model response, token information, and counts for raw, accepted, invalid, and out-of-scope findings. It also reports whether structured grammar is enabled for the selected model strategy.
 
 > [!CAUTION]
 > Debug logs may contain proprietary source code and sensitive application details. Review and sanitize them before sharing.
@@ -237,6 +252,7 @@ Each review produces a branded Markdown report with:
 - **AI Code Review:** Severity-ranked findings with issue, impact, and suggested fix.
 - **Source links:** Relative links to affected files, with line anchors in viewers that support them.
 - **Failure visibility:** An explicit AI failure status and error details when the AI stage cannot complete.
+- **Basic duplicate filtering:** Exact duplicates by file, line, and normalized issue text are filtered; semantically equivalent findings with different wording may remain.
 
 Example AI finding (*illustrative — fictional code*):
 
@@ -276,14 +292,12 @@ flowchart TD
     F --> G
     B -- Yes --> G
     G --> H[ESLint analysis]
-    G --> I[Split changed code into review chunks]
-    I --> J[Review each chunk with configured thinking strategy]
+    G --> I[Parse changed diff hunks]
+    I --> R[Build syntax-aware review chunks]
+    R --> J[Review each chunk once with focused rules]
     H --> J
-    J --> K[Try schema-constrained JSON]
-    K --> L{Valid response?}
-    L -- No --> M[Retry chunk without JSON constraint]
-    L -- Yes --> N[Normalize and validate findings]
-    M --> N
+    J --> K[Generate JSON with grammar when compatible]
+    K --> N[Normalize, schema-validate & scope-filter findings]
     N --> O{More chunks?}
     O -- Yes --> J
     O -- No --> P[Aggregate findings and review status]
@@ -293,13 +307,15 @@ flowchart TD
 
 Anubis follows these principles:
 
-1. **Review changes, not everything:** Analyze staged, unstaged, and untracked JavaScript/TypeScript files.
-2. **Use static analysis as context:** Pass ESLint findings alongside the changed code. The AI is instructed not to repeat findings with the same root cause and impact, while still reporting deeper runtime bugs that ESLint may only hint at.
-3. **Review in chunks:** Split larger changed files into line-scoped chunks with overlapping context. Keep original source line numbers so findings point to real locations; review each chunk separately.
-4. **Apply React Native review guidance:** Focus on supported, actionable runtime and lifecycle concerns.
-5. **Control generation:** Apply the configured thinking strategy and token budget where supported by the model.
-6. **Prefer structured output:** Request JSON matching the findings schema for each chunk. If that attempt fails, retry with a fresh model context without the JSON constraint, then parse supported response variations.
-7. **Report failures honestly:** Continue processing other chunks when a chunk fails, preserve available static-analysis results, and indicate partial or failed AI review status rather than treating missing results as a clean review.
+1. **Limit AI findings to changed lines:** Combine staged and unstaged edits against the working tree, parse their Git hunks, and accept AI findings only on added or modified lines. A deletion-only change is anchored to the line now occupying the removed line's position. Untracked files are reviewed in full.
+2. **Use file-level static analysis as context:** Run ESLint on each detected changed file, include all of its findings in the static-analysis report, and pass findings from the current chunk's changed ranges to the AI. The AI is instructed not to repeat findings with the same root cause and impact, while still reporting deeper runtime bugs that ESLint may only hint at.
+3. **Build syntax-aware context:** Prefer TypeScript AST statement and block boundaries, including nested function bodies and class members. Add surrounding lines in both directions, extend overlap to complete syntax boundaries instead of sending partial operations, and include referenced declarations elsewhere in the same file when they fit the context budget.
+4. **Keep context and ownership separate:** Surrounding source and related declarations help the model reason, but only exact changed ranges belong to the review scope. Findings outside those ranges are discarded.
+5. **Keep one source of review rules:** Define React Native-specific guidance only in `rules/react-native.md` and inject that rule set once into each per-chunk task prompt. The system prompt remains generic, so domain rules stay close to the reviewed code without being duplicated.
+6. **Review each chunk once:** Keep the inference path simple—one task prompt, one response schema, deterministic location/scope validation, and no candidate/verifier pipeline.
+7. **Control generation:** Apply the configured thinking strategy and token budget where supported by the model.
+8. **Use model-aware structured output:** Request schema-constrained JSON for compatible generation modes. Skip grammar for Qwen3 thinking output to avoid empty final responses caused by JSON appearing only in the thought segment.
+9. **Report failures honestly:** Continue processing other chunks when inference fails, preserve successful findings and static-analysis results, mark the AI report as failed, and include the failed chunk count and details rather than treating missing results as a clean review.
 
 ## 🔐 Privacy & Offline Reviews
 
@@ -322,16 +338,19 @@ Select an option (1): 2
 Enter the absolute or relative path to your GGUF model: ~/models/my-model.gguf
 ```
 
-Compatibility and output quality vary by model. The JSON constraint and automatic fallback improve output handling but **do not guarantee** that every model will follow instructions, produce valid findings, or return accurate suggested fixes.
+Compatibility and output quality vary by model. Anubis uses a JSON grammar for compatible generation modes and skips it for Qwen3 thinking output. This output handling does **not guarantee** that every model will follow instructions, produce valid findings, or return accurate suggested fixes.
 
 ## ⚠️ Current Limitations
 
-- **Chunking is currently line-based, not syntax-aware.** Larger files are divided into overlapping line ranges, but a chunk can still miss declarations or related code outside its context. AST-aware chunking and dependency-aware context are planned.
-- **Chunk size is not yet token-aware.** Chunking reduces source truncation but does not guarantee that every chunk fits every model's context window or that cross-file dependencies are included.
-- **AI findings are not authoritative.** Models may miss bugs, report false positives, or propose unsafe fixes.
-- **Structured output is not infallible.** Some reasoning models may emit JSON in a thinking segment rather than the final answer. Anubis retries without the JSON constraint; failed chunks are reflected in the AI status.
+- **Syntax awareness is file-local.** Chunks use TypeScript AST boundaries and can include referenced declarations from the same file, but imported implementations and other cross-file dependencies are not resolved yet.
+- **Oversized syntax nodes may still be divided.** Large functions, JSX trees, or statements that exceed the character budget are split at nested syntax boundaries, with a line-based fallback when no smaller boundary fits.
+- **Chunk size is not yet token-aware.** Chunking uses a character budget, so it does not guarantee that every prompt fits every model's context window after system instructions and chat-template overhead are included.
+- **AI findings are not authoritative.** Models may miss bugs, report false positives, or propose unsafe fixes. Schema and scope validation cannot prove correctness.
+- **Duplicate detection is text-based.** Findings with the same file, line, and case-insensitive issue text are merged; differently worded descriptions of the same problem can survive.
+- **Structured output is model-dependent.** Compatible modes use a JSON grammar for their single generation attempt. Qwen3 thinking modes make a single attempt without grammar because some chat templates place constrained JSON in thought while leaving the final response empty. There is currently no automatic retry.
 - **Thinking controls are model-dependent.** A zero budget does not necessarily disable thinking, while unbounded thinking may consume the output-token allowance before a usable final response is produced.
 - **Changed files only.** This is not a full-repository security audit or a replacement for tests.
+- **Deleted files are excluded.** Git change detection includes added, copied, modified, renamed, and untracked JavaScript/TypeScript files, but it does not review files deleted in full.
 - **JavaScript/TypeScript scope.** Native iOS/Android source files are not currently included in Git change detection.
 - **Hardware-dependent performance.** Inference speed and memory use vary by device and model.
 - **Markdown line links vary by viewer.** Not every viewer jumps to the referenced line.
@@ -346,16 +365,16 @@ Check your connection, available disk space, and access to Hugging Face. The dow
 </details>
 
 <details>
-<summary><strong>An existing model fails integrity verification</strong></summary>
+<summary><strong>The cached recommended model fails integrity verification</strong></summary>
 
-The cached model does not match the expected checksum. Move or delete the reported file and run initialization again to download a verified copy.
+The cached recommended model does not match its expected checksum. Move or delete the reported file and run initialization again to download a verified copy. Custom GGUF models are checked for a valid file path and extension but are not checksum-verified by Anubis.
 
 </details>
 
 <details>
 <summary><strong>The model returns an empty or invalid response</strong></summary>
 
-Anubis automatically retries without the JSON constraint when the first attempt fails. If both attempts fail, inspect the AI error details in the report and use `ANUBIS_DEBUG=1 anubis check` for additional diagnostics. Review `model.thinkingMode` and `model.thoughtTokens` as well as `maxTokens` and `contextSize`. Some reasoning models can spend their full generation budget on thought tokens and return no final JSON. Bounded thinking may help, but accuracy and behavior vary by model.
+Anubis currently makes one generation attempt per chunk. If it fails or returns invalid output, inspect the AI error details in the report and use `ANUBIS_DEBUG=1 anubis check` for additional diagnostics. Review `model.thinkingMode` and `model.thoughtTokens` as well as `maxTokens` and `contextSize`. Some reasoning models can spend their full generation budget on thought tokens and return no final JSON. Bounded thinking may help, but accuracy and behavior vary by model.
 
 </details>
 
@@ -367,9 +386,9 @@ Check `git status --short`. Anubis looks for changed `.js`, `.jsx`, `.ts`, and `
 </details>
 
 <details>
-<summary><strong>ESLint uses bundled fallback rules</strong></summary>
+<summary><strong>ESLint configuration selection</strong></summary>
 
-Anubis tries to use your project's ESLint setup first. If it cannot, it may use bundled rules. Check the report's ESLint configuration field.
+Anubis uses your project's ESLint setup when it detects one. If no project configuration is detected, it uses its bundled rules. A detected project configuration that fails to load or run is reported as failed; Anubis does not automatically retry it with bundled rules. Check the report's ESLint configuration field for the selected source and status.
 
 </details>
 
@@ -388,48 +407,57 @@ Interactive initialization requires a terminal. Configure Anubis before running 
 </details>
 
 <details>
-<summary><strong>AI findings appear incorrect or refer to missing state</strong></summary>
+<summary><strong>AI findings appear incorrect or miss related context</strong></summary>
 
-Line-based chunks can omit declarations that appear elsewhere in the file. Check the original source and the chunk boundaries in debug mode before acting on a finding. AST-aware and dependency-aware chunking, plus finding verification, are planned improvements.
+Syntax-aware chunks include surrounding lines and selected declarations from the same file, but they do not resolve imported implementations or full cross-file behavior. Check the original source and prepared context in debug mode before acting on a finding. Cross-file context selection and finding verification remain planned improvements.
 
 </details>
+
+## 🚦 Exit Status and Automation
+
+Anubis sets a **non-zero exit status** for uncaught CLI errors, complete AI-stage failures, and partial AI reviews with one or more failed chunks. A handled ESLint failure is recorded in the report but does not currently make the command fail. A successful command does **not** mean the code is bug-free: findings themselves do not currently affect the exit status based on severity. There are no configurable severity-based CI quality gates yet.
+
+Running `anubis check` without an existing configuration triggers interactive setup, so configure it beforehand when using a non-interactive runner.
 
 ## 🗺️ Roadmap
 
 **Implemented in the current MVP**
 
 - [x] Git-aware change detection
-- [x] ESLint integration with fallback rules
+- [x] ESLint integration with project configuration detection and bundled rules when no project configuration exists
 - [x] React Native-focused review guidance
 - [x] Automatic recommended-model download, caching, and checksum verification
 - [x] Interactive initialization and auto-init, including thinking-mode selection
-- [x] Line-based code-review chunking with original line numbers and overlapping context
+- [x] Diff-hunk parsing with exact changed-line review ownership
+- [x] Syntax-aware chunking across statements, nested blocks, function bodies, and class members
+- [x] Bidirectional surrounding context and selected same-file declaration context
+- [x] Relevant diff-hunk selection per review chunk
+- [x] Single-source behavior-focused React Native review rules injected into each chunk task
+- [x] Single-pass AI review per chunk
+- [x] Model-aware grammar selection for Qwen3 thinking output
 - [x] Per-chunk AI review with partial-failure visibility
 - [x] Configurable thinking strategy and token budget
-- [x] Schema-constrained JSON output with automatic fallback
+- [x] Model-aware JSON grammar for compatible generation modes
 - [x] Flexible response normalization and validation
 - [x] Branded Markdown report with actionable findings
+- [x] Non-zero process exit status on AI review errors or failed chunks (not severity-based quality gates)
 
 **Planned**
 
-- [ ] **AST-aware chunking:** Group code by functions, components, and syntax boundaries rather than arbitrary line ranges, with a line-based fallback.
-- [ ] **Dependency-aware context:** Include relevant state, props, imports, and related definitions across chunk boundaries; investigate cross-file context selection.
+- [ ] **Cross-file dependency context:** Resolve imports and include relevant types, helpers, state, props, and related definitions across file boundaries.
 - [ ] **Token-aware chunk sizing:** Adapt chunk budgets to model context limits and prompt overhead.
-- [ ] **Finding verification:** Check AI claims against the original source and filter unsupported findings; evaluate suggested fixes for correctness.
 - [ ] **VS Code extension:** Bring Anubis code review capabilities directly into the VS Code development workflow.
-- [ ] **Few-shot prompting:** Use curated React Native examples to improve finding accuracy and consistency.
-- [ ] **Automated testing and model evaluation:** Expand test coverage, validate model compatibility, and measure review quality.
-- [ ] **CI/CD integration:** Support non-interactive workflows, configurable severity thresholds, and exit codes for automated quality gates in CI/CD pipelines and Git hooks.
+- [ ] **Automated testing and model evaluation:** Add automated tests and model evaluation benchmarks, validate model compatibility, and measure review quality. There is no established test suite yet.
+- [ ] **CI/CD quality gates:** Support non-interactive setup/workflows and configurable severity thresholds that determine pass/fail status. Error exit codes already exist for AI failures, but findings do not currently trigger a configurable quality gate.
 - [ ] **Reporting and integrations:** Support additional report formats and integration options.
 
 ## 🤝 Contributing
 
-Contributions, issues, and suggestions are welcome when the repository is public.
+Contributions, issues, and suggestions are welcome when the repository is public. There is no established test suite yet, so validate contributions with the available build and relevant manual checks.
 
 ```bash
 npm install
 npm run build
-npm test
 npm link
 ```
 
