@@ -59,14 +59,14 @@ Linters are essential, but they don't catch every lifecycle issue, asynchronous 
 **Install globally with npm:**
 
 ```bash
-npm install --global anubis
+npm install --global @hossam.elgzeery/anubis
 ```
 
 **For local development:**
 
 ```bash
-git clone <your-anubis-repository-url>
-cd <your-anubis-repository-directory>
+git clone https://github.com/Hossam-Elgzeery/Anubis.git
+cd Anubis
 npm install
 npm run build
 npm link

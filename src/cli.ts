@@ -12,13 +12,18 @@ import { loadReviewRules } from "./rules.js";
 import { runAIReview } from "./llm.js";
 import type { AIReviewResult } from "./llm.js";
 import { generateReport } from "./reporter.js";
+import { readFileSync } from "node:fs";
+
+const packageJson = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string };
 
 const program = new Command();
 
 program
   .name("anubis")
   .description("100% Local AI Code Reviewer for React Native")
-  .version("0.1.0");
+  .version(packageJson.version);
 
 // Keep CLI help aligned with the branding and commands in README.md.
 program.addHelpText(
@@ -159,9 +164,13 @@ program
       );
       if (process.env.ANUBIS_DEBUG === "1") {
         for (const [index, chunk] of chunks.entries()) {
-          console.log(`\n----- BEGIN REVIEW CONTEXT: chunk ${index + 1}/${chunks.length} -----`);
+          console.log(
+            `\n----- BEGIN REVIEW CONTEXT: chunk ${index + 1}/${chunks.length} -----`,
+          );
           console.log(chunk.context);
-          console.log(`----- END REVIEW CONTEXT: chunk ${index + 1}/${chunks.length} -----`);
+          console.log(
+            `----- END REVIEW CONTEXT: chunk ${index + 1}/${chunks.length} -----`,
+          );
         }
       }
 
@@ -182,18 +191,34 @@ program
         );
         aiResult = chunkResult.review;
         if (chunkResult.failures.length > 0) {
-          aiError = `${chunkResult.failures.length}/${chunks.length} AI chunks failed:\n` +
-            chunkResult.failures.map((failure) =>
-              `${failure.file} [${failure.isUntracked
-                ? `${failure.ranges.map((range) => range.startLine === range.endLine
-                  ? String(range.startLine)
-                  : `${range.startLine}-${range.endLine}`).join(", ")} (untracked file)`
-                : failure.ranges.map((range) => range.startLine === range.endLine
-                  ? String(range.startLine)
-                  : `${range.startLine}-${range.endLine}`).join(", ")}]: ${failure.reason}`,
-            ).join("\n");
+          aiError =
+            `${chunkResult.failures.length}/${chunks.length} AI chunks failed:\n` +
+            chunkResult.failures
+              .map(
+                (failure) =>
+                  `${failure.file} [${
+                    failure.isUntracked
+                      ? `${failure.ranges
+                          .map((range) =>
+                            range.startLine === range.endLine
+                              ? String(range.startLine)
+                              : `${range.startLine}-${range.endLine}`,
+                          )
+                          .join(", ")} (untracked file)`
+                      : failure.ranges
+                          .map((range) =>
+                            range.startLine === range.endLine
+                              ? String(range.startLine)
+                              : `${range.startLine}-${range.endLine}`,
+                          )
+                          .join(", ")
+                  }]: ${failure.reason}`,
+              )
+              .join("\n");
           process.exitCode = 1;
-          console.warn(`⚠️ AI review partially completed: ${chunkResult.failures.length} failed chunks`);
+          console.warn(
+            `⚠️ AI review partially completed: ${chunkResult.failures.length} failed chunks`,
+          );
         }
 
         if (!aiError) console.log("✔ AI review completed");

@@ -1,9 +1,8 @@
 {
-  "name": "anubis",
+  "name": "@hossam.elgzeery/anubis",
   "version": "0.1.0",
-  "description": "",
+  "description": "A local AI-powered code review CLI with a focus on React Native.",
   "type": "module",
-  "main": "index.js",
   "bin": {
     "anubis": "./dist/cli.js"
   },
@@ -15,12 +14,23 @@
   ],
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/cli.ts",
-    "test": "vitest run"
+    "dev": "tsx src/cli.ts"
   },
-  "keywords": [],
+  "keywords": [
+    "anubis",
+    "code-review",
+    "ai-code-review",
+    "local-llm",
+    "react-native",
+    "cli",
+    "gguf",
+    "eslint"
+  ],
   "author": "Hossam Abdel-Aziz",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@eslint/js": "^10.0.1",
     "commander": "^15.0.0",
@@ -40,5 +50,13 @@
   },
   "overrides": {
     "simple-git": "4.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hossam-Elgzeery/Anubis.git"
+  },
+  "homepage": "https://github.com/Hossam-Elgzeery/Anubis#readme",
+  "bugs": {
+    "url": "https://github.com/Hossam-Elgzeery/Anubis/issues"
   }
 }
