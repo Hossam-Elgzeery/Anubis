@@ -4,7 +4,7 @@
   "description": "A local AI-powered code review CLI with a focus on React Native.",
   "type": "module",
   "bin": {
-    "anubis": "./dist/cli.js"
+    "anubis": "dist/cli.js"
   },
   "files": [
     "dist",
