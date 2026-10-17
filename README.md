@@ -323,6 +323,42 @@ Anubis follows these principles:
 
 The initial model download connects to Hugging Face. As with any developer tool, evaluate dependencies and local environment policies before using it with confidential repositories.
 
+## 🛡️ Dependency Security Notice
+
+Some installations may report security advisories in dependencies inherited from `node-llama-cpp`, which Anubis uses for local model inference. In the dependency versions tested for Anubis `0.1.0`, the affected chain was:
+
+```text
+node-llama-cpp → simple-git@3.36.0 → @simple-git/argv-parser@1.1.1
+```
+
+The reported advisory is [GHSA-v5rq-49vh-5v5c](https://github.com/advisories/GHSA-v5rq-49vh-5v5c), concerning Git editor environment-variable handling. The presence of an audit warning does not, by itself, establish that normal Anubis reviews expose an exploitable path. However, the dependency advisory should not be ignored when evaluating your environment.
+
+### Optional workaround for local npm installations
+
+In a project that installs Anubis **locally** as a dependency, you can add an npm override to the **root project's** `package.json`:
+
+```json
+{
+  "overrides": {
+    "simple-git": "4.0.2"
+  }
+}
+```
+
+Then reinstall and inspect the dependency tree:
+
+```bash
+npm install
+npm ls node-llama-cpp simple-git @simple-git/argv-parser
+npm audit
+```
+
+In our macOS tests, this override resolved the reported dependency advisories and a complete `anubis check` run succeeded. **This is a compatibility workaround, not an upstream fix:** `node-llama-cpp` declares a `simple-git@3.x` dependency, so forcing `4.0.2` crosses a major-version boundary and has not been verified on every supported platform or workflow. Other unrelated advisories in your project may still appear.
+
+**Global installations:** Overrides in your React Native project's `package.json` do **not** control dependencies installed with `npm install --global @hossam.elgzeery/anubis`. There is currently no verified automatic fix for the global-install audit warnings. Do not assume that installing Anubis globally applies the override above.
+
+We are tracking upstream dependency updates and intend to remove the need for this workaround when a compatible fix is available.
+
 ## 🧪 Advanced: Using a Custom AI Model
 
 If you already work with local AI models, select **Use an existing local model** during `anubis init`.
